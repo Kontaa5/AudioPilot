@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct SoundControllerApp: App {
+struct AudioPilotApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var mixer = Mixer()
 

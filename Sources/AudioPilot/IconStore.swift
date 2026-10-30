@@ -11,7 +11,7 @@ enum IconStore {
 
     private static var url: URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("SoundController", isDirectory: true)
+            .appendingPathComponent("SoundController", isDirectory: true)   // alter Ordnername: eigenes Symbol bleibt erhalten
             .appendingPathComponent("menu-icon.png")
     }
 

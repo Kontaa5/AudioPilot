@@ -1,4 +1,8 @@
-# SoundController – Übergabe für KI-Assistenten
+# AudioPilot – Übergabe für KI-Assistenten
+
+> Früher „SoundController“. Sichtbarer Name, Target, Ordner (`Sources/AudioPilot`) und App (`/Applications/AudioPilot.app`) heißen jetzt AudioPilot.
+> **Absichtlich alt geblieben**: Bundle-ID `com.gabrielsuntinger.SoundController` (damit Einstellungen + macOS-Berechtigungen erhalten bleiben), Logger-Subsystem und der Ordner `~/Library/Application Support/SoundController` (eigenes Menüleisten-Symbol). Der Projektordner auf dem Mac heißt noch `sound-controller`.
+> GitHub: `git@github.com:Kontaa5/AudioPilot.git`, Branch `main`.
 
 Lies diese Datei zuerst. Sie beschreibt, was der Nutzer will, wie er arbeiten will und wo das Projekt steht.
 (`CLAUDE.md` verweist hierher, damit Claude Code und andere Agenten dieselbe Quelle nutzen.)
@@ -50,20 +54,20 @@ Eigene macOS-Menüleisten-App zur Tonsteuerung, inspiriert von **FineTune** und 
 
 ## Stand (2026-10-30)
 
-- **v5 ist in `/Applications/SoundController.app` installiert und läuft** (zuletzt: Mikrofonmodus-Knopf, EQ-Kurve, Geräte-Symbol in der Menüleiste, Coffee-Link, WebKit-Zuordnung). Davor v4: alles aus v3 (schmaler Hauptregler, Schutz bei Ausgabewechsel, Priorität, AirPods holen, eigenes Symbol, Einstellungs-Tabs) + Limiter, Profi-Kompressor im eigenen Fenster, Doppelklick/Einrasten bei 100 %.
+- **v5 ist als `/Applications/AudioPilot.app` installiert und läuft** (alte `SoundController.app` entfernt) (zuletzt: Mikrofonmodus-Knopf, EQ-Kurve, Geräte-Symbol in der Menüleiste, Coffee-Link, WebKit-Zuordnung). Davor v4: alles aus v3 (schmaler Hauptregler, Schutz bei Ausgabewechsel, Priorität, AirPods holen, eigenes Symbol, Einstellungs-Tabs) + Limiter, Profi-Kompressor im eigenen Fenster, Doppelklick/Einrasten bei 100 %.
 - Einstellungs-Format: Kompressor heißt jetzt `comp` (Objekt). Der alte Wert `compressor` (0…1) wird ignoriert.
 - Geprüft: Design per Offscreen-Render (hell/dunkel, alle Tabs), böser Input für Settings-JSON und Bild-Upload (alles abgefangen), Hardened Runtime, 0 Netzwerk-Sockets, Einzel-Instanz. Render-Hilfen wieder entfernt.
 - Bluetooth wird erst nach Klick auf „AirPods vom iPhone holen …“ abgefragt (sonst Berechtigungs-Popup schon beim Öffnen des Menüs).
 - **Noch nicht mit echter Hardware getestet**: AirPods ab/an (Schutz + Popup „Ton an“), AirPods vom iPhone holen (~70 %), Hub/Monitor-Selbstheilung (~60–70 %), Anruf-Boost bei FaceTime, Stummschalten per Umleitung bei Geräten ohne Mute.
 
-## Architektur (Sources/SoundController)
+## Architektur (Sources/AudioPilot)
 
 | Datei | Inhalt |
 |---|---|
 | `App.swift` | `MenuBarExtra` (.window) + `Settings`-Szene; Symbol: stumm-Symbol bei Schutz, Telefon bei Anruf, eigenes Bild oder SF Symbol (optional mit Lautstärke). Nur eine Instanz. |
 | `CA.swift` | Dünner Wrapper um CoreAudio-Properties (get/set/array/string/listen). |
 | `Devices.swift` | `AudioDevice` (Symbol, `isMonitor`, `isHeadphones`, Symbol-Whitelist), Default-Geräte, Lautstärke, Mute, `AudioProc` (Prozessliste). |
-| `AppTap.swift` | Pro App: `CATapDescription` (Original stumm) → privates Aggregate-Device (UID-Präfix `SoundController-`) → IOProc → DSP. |
+| `AppTap.swift` | Pro App: `CATapDescription` (Original stumm) → privates Aggregate-Device (UID-Präfix `AudioPilot-`) → IOProc → DSP. |
 | `DSP.swift` | Echtzeit-sicher: 10 Biquads, Kompressor, Gain-Rampe, Soft-Clip, Pegel. Kein Heap, kein Warten auf Locks (`withLockIfAvailable`, Atomics). |
 | `Mixer.swift` | Zentrale Logik: Geräte, Apps gruppieren (Helfer → Eltern-App), Taps auf Hintergrund-Queue bauen, Watchdog/Selbstheilung, Anruf-Erkennung, Prioritätsliste, `SwitchGuard` (Schutz bei Ausgabewechsel), Bluetooth, eigenes Symbol. |
 | `Settings.swift` | Codable-Einstellungen (`settings.v2` in UserDefaults), `clamp()` prüft alles beim Laden (Bereiche, Whitelists, Längen). Kaputte Daten → `.broken`-Backup. |
@@ -74,7 +78,7 @@ Eigene macOS-Menüleisten-App zur Tonsteuerung, inspiriert von **FineTune** und 
 | `Bluetooth.swift` | IOBluetooth: gekoppelte Audio-Geräte lesen, asynchron verbinden. |
 | `IconStore.swift` | Eigenes Symbol: nur Rasterbilder (PNG/JPEG/HEIC/TIFF/GIF/BMP), ≤ 5 MB, ≤ 10 000 px, per ImageIO auf 64 px neu gezeichnet, als PNG unter festem Namen in Application Support. |
 
-Bauen: `./build.sh` (SwiftPM, Release, ad-hoc signiert, Hardened Runtime, nur Entitlement `automation.apple-events`). Installieren: App beenden, `build/SoundController.app` nach `/Applications` kopieren, starten. Nach jedem Neubau fragt macOS evtl. erneut nach „Systemaudio-Aufnahme“ (ad-hoc-Signatur).
+Bauen: `./build.sh` (SwiftPM, Release, ad-hoc signiert, Hardened Runtime, nur Entitlement `automation.apple-events`). Installieren: App beenden, `build/AudioPilot.app` nach `/Applications` kopieren, starten. Nach jedem Neubau fragt macOS evtl. erneut nach „Systemaudio-Aufnahme“ (ad-hoc-Signatur).
 
 Design prüfen ohne Ton: temporär einen Offscreen-Renderer (`NSHostingView` → PNG) per Env-Variable einbauen, Bilder ansehen, danach **restlos entfernen** und prüfen, dass die Nutzer-Einstellungen unverändert sind (`defaults export com.gabrielsuntinger.SoundController -` vorher/nachher vergleichen).
 

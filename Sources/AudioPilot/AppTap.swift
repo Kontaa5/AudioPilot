@@ -10,7 +10,7 @@ struct TapError: Error, CustomStringConvertible {
 /// verstärkt/EQt ihn und gibt ihn über ein privates Aggregate-Device auf dem Ausgabegerät aus.
 /// Wird nur auf der Tap-Queue gebaut/gestoppt; `params` ist threadsicher.
 final class AppTap: @unchecked Sendable {
-    static let uidPrefix = "SoundController-"
+    static let uidPrefix = "AudioPilot-"
     let processIDs: [AudioObjectID]
     let outputUID: String
     let params = DSPParams()
@@ -25,14 +25,14 @@ final class AppTap: @unchecked Sendable {
 
         let desc = CATapDescription(stereoMixdownOfProcesses: processIDs)
         desc.uuid = UUID()
-        desc.name = "SoundController"
+        desc.name = "AudioPilot"
         desc.isPrivate = true
         desc.muteBehavior = .mutedWhenTapped
         var err = AudioHardwareCreateProcessTap(desc, &tapID)
         guard err == noErr else { throw TapError(step: "Tap erstellen", status: err) }
 
         let agg: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "SoundController",
+            kAudioAggregateDeviceNameKey: "AudioPilot",
             kAudioAggregateDeviceUIDKey: Self.uidPrefix + UUID().uuidString,
             kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             kAudioAggregateDeviceIsPrivateKey: true,

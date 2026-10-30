@@ -2,9 +2,9 @@
 import PackageDescription
 
 let package = Package(
-    name: "SoundController",
+    name: "AudioPilot",
     platforms: [.macOS(.v15)],
     targets: [
-        .executableTarget(name: "SoundController", path: "Sources/SoundController", swiftSettings: [.swiftLanguageMode(.v5)])
+        .executableTarget(name: "AudioPilot", path: "Sources/AudioPilot", swiftSettings: [.swiftLanguageMode(.v5)])
     ]
 )

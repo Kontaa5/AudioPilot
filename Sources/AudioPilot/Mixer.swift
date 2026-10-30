@@ -449,7 +449,7 @@ final class Mixer: ObservableObject {
 
     /// Taps werden auf einer eigenen Queue gebaut/abgebaut: Hängt coreaudiod (z. B. nach Hub-Ab-/Anstecken)
     /// oder wartet macOS auf die Berechtigung, friert das Menü nicht ein.
-    private let tapQueue = DispatchQueue(label: "SoundController.taps", qos: .userInitiated)
+    private let tapQueue = DispatchQueue(label: "AudioPilot.taps", qos: .userInitiated)
     private var pending: [String: Int] = [:]   // App → Generation des laufenden Aufbaus
     private var generation = 0                 // steigt bei teardownAll → veraltete Ergebnisse verwerfen
 

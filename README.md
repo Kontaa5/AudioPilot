@@ -1,4 +1,4 @@
-# SoundController
+# AudioPilot
 
 Menüleisten-App (macOS 15+): Ausgabe & Mikrofon wählen, Lautstärke pro App (bis 400 %) mit Pegel, pro App 10-Band-EQ, Kompressor und eigenes Ausgabegerät, Anruf-Boost, Schutz bei Ausgabewechsel (Ton aus/Pausieren + „Ton an“-Popup), Geräte-Priorität, AirPods per Klick vom iPhone holen, Notch-Popup, Selbstheilung, Einstellungen mit eigenem Menüleisten-Symbol.
 
@@ -7,7 +7,7 @@ Für KI-Assistenten: siehe `AGENTS.md`.
 ## Bauen
 
 ```bash
-./build.sh && open build/SoundController.app
+./build.sh && open build/AudioPilot.app
 ```
 
 Beim ersten Start fragt macOS nach **Systemaudio-Aufnahme** (nötig für Lautstärke pro App) und beim ersten Pausieren nach **Automation** (Spotify/Musik), bei „AirPods vom iPhone holen“ nach **Bluetooth**.
@@ -23,5 +23,5 @@ Ad-hoc-Signatur: nach jedem Neubau fragt macOS evtl. erneut.
 
 ## Datenschutz & Haftung
 
-Keine Netzwerkverbindungen, keine Telemetrie, nichts wird aufgenommen oder gespeichert außer den eigenen Einstellungen (`~/Library/Preferences/com.gabrielsuntinger.SoundController.plist`).
+Keine Netzwerkverbindungen, keine Telemetrie, nichts wird aufgenommen oder gespeichert außer den eigenen Einstellungen (`~/Library/Preferences/com.gabrielsuntinger.SoundController.plist` – die Bundle-ID stammt noch vom alten Namen).
 Privates Projekt, ohne Gewähr. FineTune und SoundSource werden nur erkannt, um vor Doppelbetrieb zu warnen.

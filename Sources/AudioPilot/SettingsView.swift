@@ -54,7 +54,7 @@ private struct GeneralTab: View {
                 LabeledContent {
                     Button { Support.openCoffee() } label: { Label("Buy me a coffee", systemImage: "cup.and.saucer.fill") }
                 } label: {
-                    Text("Gefällt dir SoundController?")
+                    Text("Gefällt dir AudioPilot?")
                     Text("Kostenlos und ohne Werbung – über einen Kaffee freue ich mich.")
                 }
                 Label("Alles läuft lokal. Keine Netzwerkverbindungen, nichts wird aufgenommen oder gespeichert.", systemImage: "lock.shield")
