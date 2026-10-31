@@ -36,7 +36,8 @@ Eigene macOS-Menüleisten-App zur Tonsteuerung, inspiriert von **FineTune** und 
 5. **Bei Ausgabewechsel schützen** – nicht nur Spotify, sondern generell:
    - lieber **Ton ganz ausschalten** (Hardware-Mute am neuen Gerät); wo Gerät nicht stumm schaltbar → per Umleitung stumm + Spotify/Musik pausieren,
    - dazu **Popup „Ton an“ / „Weiterspielen“**: daheim ein Klick und es geht weiter, in der Öffentlichkeit geht nichts laut los. ✅ (in v3 gebaut, noch nicht real getestet)
-6. **Notch-Popup**, wenn AirPods/ein Gerät sich verbindet. ✅
+   - **Wechsel auf Kopfhörer/AirPods → pausieren** (nicht stumm): Spotify/Musik per AppleScript, andere spielende Apps per Umleitung still bis „Weiterspielen“. Einstellung `pauseOnHeadphones` (Standard an; ersetzt alte `guardHeadphones`, die standardmäßig aus war → Bug „pausiert bei AirPods nicht“). ✅ (2026-10-31, ungetestet mit echten AirPods)
+6. **Notch-Popup**, wenn AirPods/ein Gerät sich verbindet. ✅ Form wie macOS/Dynamic Island: oben nach außen geschwungene Schultern, unten große Rundung; federt in SwiftUI aus der Notch-Breite auf und zurück (Fenster hat gleich Endgröße, `NotchShape` animierbar). Nutzer fand die alte Version „zu eckig“.
 7. **AirPods**: wenn sie am iPhone hängen → mit einem Klick zum Mac holen („Verbinden“ im Menü). Standard-Verhalten über Prioritätsliste. ✅ (v3, ungetestet, ~70 %)
 8. **Bevorzugte Ausgabe / Prioritätsliste**: automatisch zum wichtigsten verfügbaren Gerät wechseln, Reihenfolge in den Einstellungen änderbar. ✅ (v3)
 9. **Hub/Monitor-Problem**: USB-C→DisplayPort über Hub ist ausgewählt, aber stumm. Manuelle Lösung des Nutzers war: FineTune beenden, `killall coreaudiod`, Monitor ab-/anstecken, FineTune starten. → App soll das **selbst heilen** und „nie abkacken“. ✅ Watchdog + „Anstoßen“ (Ausgabe kurz weg und zurück), ungetestet mit echtem Hub (~60–70 %).

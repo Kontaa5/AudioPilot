@@ -37,7 +37,10 @@ private struct GeneralTab: View {
                     Text("Geräte ohne eigenen Stumm-Schalter (z. B. Monitor über DisplayPort) werden per Umleitung stumm geschaltet; Spotify und Musik werden zusätzlich pausiert.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Toggle("Auch beim Wechsel auf Kopfhörer", isOn: $mixer.settings.guardHeadphones)
+                Toggle(isOn: $mixer.settings.pauseOnHeadphones) {
+                    Text("Beim Wechsel auf Kopfhörer pausieren")
+                    Text("Z. B. AirPods verbinden: Spotify und Musik halten an, andere Apps bleiben still bis „Weiterspielen“.")
+                }
                     .disabled(mixer.settings.switchAction == .nothing)
             } header: { Text("Schutz beim Gerätewechsel") }
 

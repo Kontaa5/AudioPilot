@@ -127,7 +127,7 @@ struct Settings: Codable, Equatable {
     var softMaster: Float = 1     // Software-Lautstärke für Geräte ohne Hardware-Regler (z. B. DisplayPort)
     var maxBoost: Float = 4
     var switchAction = SwitchAction.mute
-    var guardHeadphones = false   // auch beim Wechsel auf Kopfhörer stumm schalten
+    var pauseOnHeadphones = true  // beim Wechsel auf Kopfhörer/AirPods pausieren (nicht stumm)
     var notchPopup = true
     var autoHeal = true           // hängende Umleitungen neu bauen, Monitor-Ton anstoßen
     var menuIcon = "speaker.wave.2.fill"
@@ -148,7 +148,7 @@ struct Settings: Codable, Equatable {
         softMaster = try c.decodeIfPresent(Float.self, forKey: .softMaster) ?? def.softMaster
         maxBoost = try c.decodeIfPresent(Float.self, forKey: .maxBoost) ?? def.maxBoost
         switchAction = (try? c.decodeIfPresent(SwitchAction.self, forKey: .switchAction)) ?? def.switchAction
-        guardHeadphones = try c.decodeIfPresent(Bool.self, forKey: .guardHeadphones) ?? def.guardHeadphones
+        pauseOnHeadphones = try c.decodeIfPresent(Bool.self, forKey: .pauseOnHeadphones) ?? def.pauseOnHeadphones
         notchPopup = try c.decodeIfPresent(Bool.self, forKey: .notchPopup) ?? def.notchPopup
         autoHeal = try c.decodeIfPresent(Bool.self, forKey: .autoHeal) ?? def.autoHeal
         menuIcon = try c.decodeIfPresent(String.self, forKey: .menuIcon) ?? def.menuIcon

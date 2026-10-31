@@ -283,11 +283,18 @@ final class Mixer: ObservableObject {
     /// nichts laut losgeht, Ton aus bzw. Musik pausieren – mit Popup „Ton an“ / „Weiterspielen“.
     private func protectAfterSwitch() {
         guard settings.switchAction != .nothing, let dev = currentOutput,
-              settings.guardHeadphones || !dev.isHeadphones,
+              !dev.isHeadphones || settings.pauseOnHeadphones,
               apps.contains(where: \.isPlaying) else { return }
         releaseGuard(resume: false)
         let title: String, button: String
-        if settings.switchAction == .mute && Devices.canMute(dev.id) {
+        if dev.isHeadphones {
+            // Kopfhörer: Stummschalten wäre sinnlos – pausieren; was sich nicht pausieren lässt, per Umleitung still.
+            let paused = MediaControl.pauseAll()
+            let others = apps.contains { $0.isPlaying && !MediaControl.handles($0.id) }
+            switchGuard = others ? .soft(paused: paused) : .paused(paused)
+            if !others && paused.isEmpty { switchGuard = nil; return }
+            (title, button) = ("Pausiert", "Weiterspielen")
+        } else if settings.switchAction == .mute && Devices.canMute(dev.id) {
             Devices.setMute(dev.id, true)
             switchGuard = .muted(dev.id)
             (title, button) = ("Ton aus", "Ton an")
@@ -302,7 +309,7 @@ final class Mixer: ObservableObject {
         }
         log.info("Ausgabewechsel → Schutz aktiv")
         apply()
-        NotchPopup.shared.show(symbol: "speaker.slash.fill", title: title, subtitle: "Ausgabe gewechselt zu \(dev.name)",
+        NotchPopup.shared.show(symbol: dev.isHeadphones ? dev.symbol : "speaker.slash.fill", title: title, subtitle: "Ausgabe gewechselt zu \(dev.name)",
                                action: (button, { [weak self] in self?.releaseGuard() }), duration: 20)
     }
 

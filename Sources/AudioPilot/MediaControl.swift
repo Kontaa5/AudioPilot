@@ -5,6 +5,8 @@ import AppKit
 enum MediaControl {
     private static let players = ["com.spotify.client", "com.apple.Music"]
 
+    static func handles(_ bundleID: String) -> Bool { players.contains(bundleID) }
+
     /// Pausiert nur, was gerade spielt. Gibt zurück, welche Apps pausiert wurden (zum Weiterspielen).
     static func pauseAll() -> [String] {
         players.filter { id in
