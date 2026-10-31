@@ -26,7 +26,7 @@ private struct GeneralTab: View {
             Section {
                 Picker(selection: $mixer.settings.switchAction) {
                     Text("Ton ausschalten").tag(SwitchAction.mute)
-                    Text("Musik pausieren").tag(SwitchAction.pause)
+                    Text("Pausieren, Rest stumm").tag(SwitchAction.pause)
                     Text("Nichts tun").tag(SwitchAction.nothing)
                 } label: {
                     Text("Wenn die Ausgabe von selbst wechselt")

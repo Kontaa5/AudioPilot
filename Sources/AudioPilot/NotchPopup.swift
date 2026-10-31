@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Kleines schwarzes Popup, das aus der Notch „herauswächst“ (wie bei AirPods am iPhone).
+/// `duration: .infinity` → bleibt, bis man klickt oder ✕ drückt.
 /// Das Fenster hat gleich die Endgröße; die Form selbst federt in SwiftUI aus der Notch auf und wieder hinein.
 @MainActor
 final class NotchPopup {
@@ -41,7 +42,7 @@ final class NotchPopup {
         DispatchQueue.main.async { withAnimation(.spring(response: 0.5, dampingFraction: 0.72)) { m.isOpen = true } }
         let work = DispatchWorkItem { [weak self] in self?.hide() }
         hideWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
+        if duration.isFinite { DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work) }
     }
 
     func hide(animated: Bool = true) {

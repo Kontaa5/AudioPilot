@@ -18,8 +18,9 @@ struct AudioApp: Identifiable {
 /// Schutz nach automatischem Ausgabewechsel: Ton aus bzw. pausiert, bis man „Ton an“ drückt.
 enum SwitchGuard: Equatable {
     case muted(AudioDeviceID)      // Hardware-Stumm am neuen Gerät
-    case soft(paused: [String])    // Gerät kann nicht stumm → alle Apps per Umleitung auf 0 (+ Player pausiert)
-    case paused([String])          // nur pausiert
+    case soft(paused: [String])    // alle Apps per Umleitung auf 0, Spotify/Musik zusätzlich pausiert
+
+    var paused: [String] { if case .soft(let p) = self { return p }; return [] }
 }
 
 /// Pegelanzeigen getrennt vom Rest, damit 12×/s nur die Meter neu zeichnen.
@@ -286,40 +287,30 @@ final class Mixer: ObservableObject {
               !dev.isHeadphones || settings.pauseOnHeadphones,
               apps.contains(where: \.isPlaying) else { return }
         releaseGuard(resume: false)
-        let title: String, button: String
-        if dev.isHeadphones {
-            // Kopfhörer: Stummschalten wäre sinnlos – pausieren; was sich nicht pausieren lässt, per Umleitung still.
-            let paused = MediaControl.pauseAll()
-            let others = apps.contains { $0.isPlaying && !MediaControl.handles($0.id) }
-            switchGuard = others ? .soft(paused: paused) : .paused(paused)
-            if !others && paused.isEmpty { switchGuard = nil; return }
-            (title, button) = ("Pausiert", "Weiterspielen")
-        } else if settings.switchAction == .mute && Devices.canMute(dev.id) {
+        if settings.switchAction == .mute && !dev.isHeadphones && Devices.canMute(dev.id) {
             Devices.setMute(dev.id, true)
             switchGuard = .muted(dev.id)
-            (title, button) = ("Ton aus", "Ton an")
-        } else if settings.switchAction == .mute {
-            switchGuard = .soft(paused: MediaControl.pauseAll())
-            (title, button) = ("Ton aus", "Ton an")
         } else {
-            let paused = MediaControl.pauseAll()
-            guard !paused.isEmpty else { return }
-            switchGuard = .paused(paused)
-            (title, button) = ("Pausiert", "Weiterspielen")
+            // Kopfhörer, Gerät ohne Stumm-Schalter oder „Musik pausieren“: Player anhalten und
+            // alles andere per Umleitung stumm – so bleibt es still, auch wenn Pausieren nicht klappt.
+            switchGuard = .soft(paused: MediaControl.pauseAll())
         }
+        let paused = !(switchGuard?.paused.isEmpty ?? true)
+        let (title, button) = paused ? ("Pausiert", "Weiterspielen") : ("Ton aus", "Ton an")
         log.info("Ausgabewechsel → Schutz aktiv")
         apply()
         NotchPopup.shared.show(symbol: dev.isHeadphones ? dev.symbol : "speaker.slash.fill", title: title, subtitle: "Ausgabe gewechselt zu \(dev.name)",
-                               action: (button, { [weak self] in self?.releaseGuard() }), duration: 20)
+                               action: (button, { [weak self] in self?.releaseGuard() }), duration: .infinity)
     }
 
     /// „Ton an“: Stumm aufheben und ggf. pausierte Player weiterspielen lassen.
     func releaseGuard(resume: Bool = true) {
         guard let g = switchGuard else { return }
         switchGuard = nil
+        NotchPopup.shared.hide()
         switch g {
         case .muted(let id): Devices.setMute(id, false)
-        case .soft(let p), .paused(let p): if resume { MediaControl.resume(p) }
+        case .soft(let p): if resume { MediaControl.resume(p) }
         }
         apply()
     }
@@ -356,7 +347,7 @@ final class Mixer: ObservableObject {
         let mode = AVCaptureDevice.activeMicrophoneMode
         if mode != micMode { micMode = mode }
         // Selbst entstummt (Tastatur, Kontrollzentrum) → Schutz ist erledigt.
-        if case .muted(let id) = switchGuard, !Devices.isMuted(id) { switchGuard = nil }
+        if case .muted(let id) = switchGuard, !Devices.isMuted(id) { switchGuard = nil; NotchPopup.shared.hide() }
         let running = NSWorkspace.shared.runningApplications
         conflictApp = running.compactMap { $0.bundleIdentifier.flatMap { Self.conflicting[$0] } }.first
 

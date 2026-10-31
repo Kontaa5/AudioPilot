@@ -184,7 +184,7 @@ private struct GuardBanner: View {
     let release: () -> Void
 
     var body: some View {
-        let paused: Bool = { if case .paused = `guard` { return true }; return false }()
+        let paused = !`guard`.paused.isEmpty
         HStack(spacing: 10) {
             Image(systemName: paused ? "pause.fill" : "speaker.slash.fill")
                 .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
