@@ -1,9 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// Kleines schwarzes Popup, das aus der Notch „herauswächst“ (wie bei AirPods am iPhone).
+/// Schwarzes Popup, für das die Notch seitlich aufgeht (wie macOS „Stromsparmodus“): links Symbol + Titel,
+/// rechts Knopf bzw. Status – gleiche Höhe wie die Notch, nichts hängt nach unten.
 /// `duration: .infinity` → bleibt, bis man klickt oder ✕ drückt.
-/// Das Fenster hat gleich die Endgröße; die Form selbst federt in SwiftUI aus der Notch auf und wieder hinein.
+/// Das Fenster hat gleich die Endgröße; die Form selbst federt in SwiftUI aus der Notch auf und wieder zu.
 @MainActor
 final class NotchPopup {
     static let shared = NotchPopup()
@@ -20,17 +21,18 @@ final class NotchPopup {
             notchWidth = min(max(screen.frame.width - l.width - r.width, 120), 300)
         }
         let m = PopupModel(notch: NSSize(width: notchWidth, height: notch),
-                           open: NSSize(width: 380, height: notch + 64))
+                           open: NSSize(width: notchWidth + 2 * PopupModel.wing, height: notch))
         let view = PopupView(model: m, symbol: symbol, title: title, subtitle: subtitle,
                              actionTitle: action?.title,
                              onAction: { [weak self] in action?.run(); self?.hide() },
                              onClose: { [weak self] in self?.hide() })
         // Platz für Schultern und Schatten rundherum.
-        let size = NSSize(width: m.open.width + 2 * PopupModel.shoulder + 40, height: m.open.height + 30)
+        let size = NSSize(width: m.open.width + 2 * PopupModel.shoulder + 40, height: m.open.height + 24)
         let p = NSPanel(contentRect: NSRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height,
                                             width: size.width, height: size.height),
                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        p.level = .statusBar
+        // Über dem schwarzen Notch-Streifen, den macOS im Vollbild oben einblendet (Ebene 26) – .statusBar (25) läge darunter.
+        p.level = .popUpMenu
         p.isOpaque = false
         p.backgroundColor = .clear
         p.hasShadow = false
@@ -59,7 +61,8 @@ final class NotchPopup {
 
 @MainActor
 private final class PopupModel: ObservableObject {
-    static let shoulder: CGFloat = 12
+    static let shoulder: CGFloat = 8
+    static let wing: CGFloat = 215   // Breite links/rechts neben der Notch
     let notch: NSSize, open: NSSize
     @Published var isOpen = false
     init(notch: NSSize, open: NSSize) { self.notch = notch; self.open = open }
@@ -103,39 +106,45 @@ private struct PopupView: View {
         let size = open ? model.open : model.notch
         let s = PopupModel.shoulder
         ZStack(alignment: .top) {
-            NotchShape(shoulder: open ? s : 6, radius: open ? 26 : 10)
+            NotchShape(shoulder: s, radius: min(14, model.notch.height / 2.4))
                 .fill(.black)
                 .frame(width: size.width + 2 * s, height: size.height)
-                .shadow(color: .black.opacity(open ? 0.35 : 0), radius: 12, y: 4)
-            content
-                .padding(.horizontal, 20)
-                .padding(.top, model.notch.height)
-                .frame(width: model.open.width, height: model.open.height)
-                .opacity(open ? 1 : 0)
-                .scaleEffect(open ? 1 : 0.6, anchor: .top)
-                .blur(radius: open ? 0 : 6)
+                .shadow(color: .black.opacity(open ? 0.3 : 0), radius: 8, y: 2)
+            HStack(spacing: 0) {
+                left.frame(width: PopupModel.wing - 18, alignment: .leading)
+                Spacer(minLength: model.notch.width)
+                right.frame(width: PopupModel.wing - 18, alignment: .trailing)
+            }
+            .padding(.horizontal, 18)
+            .frame(width: model.open.width, height: model.notch.height)
+            .opacity(open ? 1 : 0)
+            .blur(radius: open ? 0 : 4)
+            .animation(open ? .easeOut(duration: 0.25).delay(0.12) : .easeIn(duration: 0.1), value: open)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    private var content: some View {
-        HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 26)).foregroundStyle(.white)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: title).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
-                Text(verbatim: subtitle).font(.system(size: 12)).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
-            }
-            Spacer(minLength: 8)
+    private var left: some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol).font(.system(size: 15)).foregroundStyle(.white)
+            Text(verbatim: title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+        }
+    }
+
+    private var right: some View {
+        HStack(spacing: 8) {
             if let actionTitle {
                 Button(action: onAction) {
                     Text(verbatim: actionTitle).font(.system(size: 12, weight: .semibold))
-                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .padding(.horizontal, 10).padding(.vertical, 3)
                         .background(Capsule().fill(.white)).foregroundStyle(.black)
                 }.buttonStyle(.plain)
+                Button(action: onClose) {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.55))
+                }.buttonStyle(.plain)
+            } else {
+                Text(verbatim: subtitle).font(.system(size: 13)).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
             }
-            Button(action: onClose) {
-                Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.white.opacity(0.6))
-            }.buttonStyle(.plain)
         }
     }
 }

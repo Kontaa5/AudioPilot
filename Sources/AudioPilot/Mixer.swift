@@ -65,8 +65,11 @@ final class Mixer: ObservableObject {
     private var taps: [String: AppTap] = [:]
     private var failed: [String: Date] = [:]             // nicht im Sekundentakt erneut versuchen
     private var stalls: [String: (count: Int, seen: Int)] = [:]
+    private var restarts: [String: Int] = [:]            // Watchdog-Neustarts in Folge → immer längere Pause
     private var seen: Set<String> = []
     private var knownDevices: Set<AudioDeviceID> = []
+    private var handledOutput: AudioDeviceID = 0         // zuletzt behandelte Standard-Ausgabe (refreshDevices allein reicht nicht)
+    private var handledWasHeadphones = false
     private var quietUntil = Date().addingTimeInterval(3)  // kein Pausieren/Popup direkt nach Start
     private var manualUntil = Date.distantPast              // Wechsel per Klick im Menü → kein Schutz nötig
     private var wantBluetooth: String?                      // gerade verbundene Kopfhörer → sofort dorthin wechseln
@@ -80,6 +83,8 @@ final class Mixer: ObservableObject {
         customIcon = IconStore.load(template: settings.iconTemplate)
         refreshDevices()
         knownDevices = Set(outputs.map(\.id))
+        handledOutput = defaultOutput
+        handledWasHeadphones = currentOutput?.isHeadphones ?? false
         CA.listen(CA.system, kAudioHardwarePropertyDevices) { [weak self] in self?.devicesChanged() }
         CA.listen(CA.system, kAudioHardwarePropertyDefaultOutputDevice) { [weak self] in self?.defaultChanged() }
         CA.listen(CA.system, kAudioHardwarePropertyDefaultInputDevice) { [weak self] in self?.refreshDevices() }
@@ -204,6 +209,19 @@ final class Mixer: ObservableObject {
         }
     }
 
+    /// Kopfhörer → Lautsprecher: macOS stellt die alte (oft hohe) Lautsprecher-Lautstärke wieder her – auf max. 30 % deckeln.
+    /// Nach 0,5 s noch einmal, falls macOS den Wert erst nach dem Wechsel setzt.
+    private func capVolume(_ id: AudioDeviceID, again: Bool = true) {
+        let limit: Float = 0.3
+        if let v = Devices.volume(id), v > limit { setVolume(device: id, limit) }
+        else if Devices.volume(id) == nil, settings.softMaster > limit { settings.softMaster = limit }
+        guard again else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self, self.defaultOutput == id else { return }
+            self.capVolume(id, again: false)
+        }
+    }
+
     func setInputVolume(_ id: AudioDeviceID, _ v: Float) {
         Devices.setVolume(id, v, input: true)
         inputVolumes[id] = v
@@ -231,6 +249,8 @@ final class Mixer: ObservableObject {
         let before = knownDevices
         refreshDevices()
         knownDevices = Set(outputs.map(\.id))
+        // Das Geräte-Event kommt oft vor dem Standard-Ausgabe-Event – Wechsel trotzdem behandeln.
+        if defaultOutput != handledOutput { defaultChanged() }
         // Unsere eigenen Aggregates lösen das Event auch aus – nur echte Änderungen zählen (sonst Endlosschleife).
         guard knownDevices != before else { return }
         // Frische Aggregate-Devices bauen: alte zeigen nach Ab-/Anstecken (Hub, Monitor) oft ins Leere.
@@ -258,7 +278,7 @@ final class Mixer: ObservableObject {
                 if active && dev.isMonitor && self.settings.autoHeal { self.nudge() }
                 guard self.settings.notchPopup, self.switchGuard == nil else { continue }
                 if active {
-                    NotchPopup.shared.show(symbol: dev.symbol, title: dev.name, subtitle: "Verbunden · Ton läuft hier")
+                    NotchPopup.shared.show(symbol: dev.symbol, title: dev.name, subtitle: "Verbunden")
                 } else {
                     NotchPopup.shared.show(symbol: dev.symbol, title: dev.name, subtitle: "Verbunden",
                                            action: ("Hier abspielen", { [weak self] in self?.selectOutput(dev.id) }))
@@ -268,12 +288,16 @@ final class Mixer: ObservableObject {
     }
 
     private func defaultChanged() {
-        let old = defaultOutput
         refreshDevices()
-        guard defaultOutput != old else { return }
-        let automatic = Date() > quietUntil && Date() > manualUntil
+        guard defaultOutput != handledOutput else { return }
+        handledOutput = defaultOutput
+        // Kopfhörer → Lautsprecher schützt immer, auch per Klick: genau da würde es laut losgehen.
+        let toSpeakers = handledWasHeadphones && currentOutput?.isHeadphones == false
+        handledWasHeadphones = currentOutput?.isHeadphones ?? false
+        let automatic = Date() > quietUntil && (Date() > manualUntil || toSpeakers)
         if case .muted(let id) = switchGuard, id != defaultOutput { Devices.setMute(id, false); switchGuard = nil }
         if automatic { protectAfterSwitch() }
+        if toSpeakers { capVolume(defaultOutput) }
         rebuildAll(after: 0.3)
         if settings.autoHeal, currentOutput?.isMonitor == true, Date() > quietUntil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.nudge() }
@@ -284,20 +308,21 @@ final class Mixer: ObservableObject {
     /// nichts laut losgeht, Ton aus bzw. Musik pausieren – mit Popup „Ton an“ / „Weiterspielen“.
     private func protectAfterSwitch() {
         guard settings.switchAction != .nothing, let dev = currentOutput,
-              !dev.isHeadphones || settings.pauseOnHeadphones,
-              apps.contains(where: \.isPlaying) else { return }
+              !dev.isHeadphones || settings.pauseOnHeadphones else { return }
+        let carried = switchGuard?.paused ?? []   // schon pausierte Player nicht vergessen (Weiterspielen)
+        guard !carried.isEmpty || apps.contains(where: \.isPlaying) else { return }
         releaseGuard(resume: false)
-        if settings.switchAction == .mute && !dev.isHeadphones && Devices.canMute(dev.id) {
+        if carried.isEmpty && settings.switchAction == .mute && !dev.isHeadphones && Devices.canMute(dev.id) {
             Devices.setMute(dev.id, true)
             switchGuard = .muted(dev.id)
         } else {
             // Kopfhörer, Gerät ohne Stumm-Schalter oder „Musik pausieren“: Player anhalten und
             // alles andere per Umleitung stumm – so bleibt es still, auch wenn Pausieren nicht klappt.
-            switchGuard = .soft(paused: MediaControl.pauseAll())
+            switchGuard = .soft(paused: carried + MediaControl.pauseAll())
         }
         let paused = !(switchGuard?.paused.isEmpty ?? true)
         let (title, button) = paused ? ("Pausiert", "Weiterspielen") : ("Ton aus", "Ton an")
-        log.info("Ausgabewechsel → Schutz aktiv")
+        log.notice("Ausgabewechsel → Schutz aktiv")
         apply()
         NotchPopup.shared.show(symbol: dev.isHeadphones ? dev.symbol : "speaker.slash.fill", title: title, subtitle: "Ausgabe gewechselt zu \(dev.name)",
                                action: (button, { [weak self] in self?.releaseGuard() }), duration: .infinity)
@@ -335,6 +360,7 @@ final class Mixer: ObservableObject {
     func repair() {
         teardownAll()
         failed.removeAll()
+        restarts.removeAll()
         lastError = nil
         refreshDevices()
         if outputs.count > 1 { nudge() } else { rebuildAll(after: 0.3) }
@@ -506,22 +532,31 @@ final class Mixer: ObservableObject {
     }
 
     /// Selbstheilung: Läuft der Audio-Callback einer Umleitung 3 s nicht mehr, wird sie neu gebaut.
+    /// Hängt eine Umleitung (3 s kein Audio-Callback), neu bauen – aber mit wachsender Pause (5 s, 10 s … 5 min).
+    /// Sonst entsteht eine Schleife: Neubau alle paar Sekunden schaltet die App jedes Mal kurz stumm → Knacksen (Issue #1).
     private func watchdog() {
         guard settings.autoHeal else { return }
         for (id, t) in taps {
             let c = t.params.callbacks.load(ordering: .relaxed)
-            if let prev = stalls[id], prev.seen == c {
-                let n = prev.count + 1
-                stalls[id] = (n, c)
-                if n >= 3 {
-                    log.error("Tap hängt: \(id, privacy: .public) → neu bauen")
-                    taps[id] = nil
-                    stalls[id] = nil
-                    failed[id] = nil
-                    tapQueue.async { t.stop() }
-                }
-            } else {
+            guard let prev = stalls[id], prev.seen == c else {
+                if stalls[id] != nil { restarts[id] = nil }   // läuft wieder → Pause zurücksetzen
                 stalls[id] = (0, c)
+                continue
+            }
+            let n = prev.count + 1
+            stalls[id] = (n, c)
+            guard n >= 3 else { continue }
+            let r = (restarts[id] ?? 0) + 1
+            restarts[id] = r
+            let wait = min(5 * pow(2, Double(r - 1)), 300)
+            log.error("Tap hängt (\(c == 0 ? "nie gestartet" : "stehen geblieben", privacy: .public)): \(id, privacy: .public) → neu in \(Int(wait)) s")
+            taps[id] = nil
+            stalls[id] = nil
+            failed[id] = Date().addingTimeInterval(wait - 5)   // apply() wartet 5 s nach `failed`
+            tapQueue.async { t.stop() }
+            if r >= 3 {
+                let name = apps.first { $0.id == id }?.name ?? id
+                lastError = "Umleitung für \(name) startet nicht. Ggf. „Systemaudio-Aufnahme“ in den Datenschutz-Einstellungen erlauben."
             }
         }
     }
