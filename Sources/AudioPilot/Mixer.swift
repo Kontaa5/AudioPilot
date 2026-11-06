@@ -59,8 +59,17 @@ final class Mixer: ObservableObject {
     let meters = Meters()
     var compressorWindows = 0                    // offene Kompressor-Fenster (dann laufen die Meter weiter)
     var menuVisible = false {
-        didSet { if menuVisible && !oldValue { refreshBluetooth() } }
+        didSet {
+            guard menuVisible != oldValue else { return }
+            if menuVisible { refreshBluetooth(); updateMeterTaps() } else { stopMeterTaps() }
+        }
     }
+    /// Spielende Apps, lauteste zuerst (für „Top 3“ im Menü). Nur bei offenem Menü aktualisiert.
+    @Published private(set) var ranking: [String] = []
+    private var meterTaps: [String: AppTap] = [:]       // nur messen, Original bleibt hörbar
+    private var meterPending: Set<String> = []
+    private var meterFailed: Set<String> = []
+    private var loudness: [String: Float] = [:]         // langsam geglätteter Pegel
 
     private var taps: [String: AppTap] = [:]
     private var failed: [String: Date] = [:]             // nicht im Sekundentakt erneut versuchen
@@ -299,9 +308,6 @@ final class Mixer: ObservableObject {
         if automatic { protectAfterSwitch() }
         if toSpeakers { capVolume(defaultOutput) }
         rebuildAll(after: 0.3)
-        if settings.autoHeal, currentOutput?.isMonitor == true, Date() > quietUntil {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.nudge() }
-        }
     }
 
     /// Ausgabe hat von selbst gewechselt (Kopfhörer weg, Gerät neu …): damit in der Öffentlichkeit
@@ -401,6 +407,8 @@ final class Mixer: ObservableObject {
         callActive = anyMic
         apply()
         watchdog()
+        updateMeterTaps()
+        updateRanking()
     }
 
     private static let webKitSuffixes = [" Graphics and Media", " Web Content", " Networking", " Grafik und Medien", " Webinhalte", " Netzwerk"]
@@ -564,19 +572,76 @@ final class Mixer: ObservableObject {
     private func updateMeters() {
         guard menuVisible || compressorWindows > 0 else { return }
         var l: [String: Float] = [:], gr: [String: Float] = [:]
-        for (id, t) in taps {
+        let all = taps.merging(meterTaps) { full, _ in full }
+        for (id, t) in all {
             let old = meters.levels[id] ?? 0
             let v = max(t.params.peak, old * 0.82)
             l[id] = v < 0.001 ? 0 : v
             let r = t.params.reduction
             gr[id] = r.isFinite && r > 0.05 ? min(r, 60) : 0
         }
+        for (id, v) in l { loudness[id] = (loudness[id] ?? 0) * 0.95 + v * 0.05 }   // ≈ 2 s Mittel
         if l != meters.levels { meters.levels = l }
         if gr != meters.reductions { meters.reductions = gr }
     }
 
+    // MARK: Was spielt gerade? (Mess-Taps)
+
+    /// Bei offenem Menü bekommt jede spielende App ohne Umleitung einen Mess-Tap (Original bleibt hörbar),
+    /// damit man sieht, woher Ton kommt, und die lautesten oben stehen.
+    private func updateMeterTaps() {
+        guard menuVisible, let out = currentOutput else { return }
+        let want = Dictionary(apps.filter { $0.isPlaying && taps[$0.id] == nil && !meterFailed.contains($0.id) }
+                                .map { ($0.id, $0.processIDs) }, uniquingKeysWith: { a, _ in a })
+        for (id, t) in meterTaps where want[id] != t.processIDs || t.outputUID != out.uid {
+            meterTaps[id] = nil
+            tapQueue.async { t.stop() }
+        }
+        let gen = generation, q = tapQueue
+        for (id, pids) in want where meterTaps[id] == nil && !meterPending.contains(id) {
+            meterPending.insert(id)
+            q.async {
+                let r = Result { try AppTap(processIDs: pids, outputUID: out.uid, gain: 1, setting: AppSetting(), meterOnly: true) }
+                DispatchQueue.main.async { [weak self] in
+                    MainActor.assumeIsolated {
+                        guard let self else { if case .success(let t) = r { q.async { t.stop() } }; return }
+                        self.meterPending.remove(id)
+                        switch r {
+                        case .success(let t) where self.generation == gen && self.menuVisible && self.meterTaps[id] == nil:
+                            self.meterTaps[id] = t
+                        case .success(let t):
+                            q.async { t.stop() }
+                        case .failure:
+                            self.meterFailed.insert(id)   // nicht im Sekundentakt neu versuchen; beim nächsten Öffnen wieder
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopMeterTaps() {
+        let all = Array(meterTaps.values)
+        meterTaps.removeAll()
+        meterFailed.removeAll()
+        tapQueue.async { all.forEach { $0.stop() } }
+    }
+
+    /// Lauteste zuerst, in 6-dB-Stufen – innerhalb einer Stufe bleibt die alte Reihenfolge (kein Hin- und Herspringen).
+    private func updateRanking() {
+        guard menuVisible else { return }
+        let old = Dictionary(ranking.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+        func step(_ id: String) -> Int { Int((20 * log10f(max(loudness[id] ?? 0, 1e-5)) / 6).rounded(.down)) }
+        let order = apps.filter(\.isPlaying).sorted {
+            let a = step($0.id), b = step($1.id)
+            return a != b ? a > b : (old[$0.id] ?? .max, $0.name) < (old[$1.id] ?? .max, $1.name)
+        }.map(\.id)
+        if order != ranking { ranking = order }
+    }
+
     private func teardownAll() {
         generation += 1
+        stopMeterTaps()
         pending.removeAll()
         stalls.removeAll()
         let all = Array(taps.values)

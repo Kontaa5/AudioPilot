@@ -25,6 +25,18 @@ enum MediaControl {
         }
     }
 
+    private static let queue = DispatchQueue(label: "AudioPilot.media", qos: .userInitiated)
+
+    /// Play/Pause für den Knopf im Menü (nur Spotify/Musik, nur wenn sie laufen).
+    /// Im Hintergrund: Apple Events können dauern, das Menü soll nicht hängen.
+    static func playPause(_ id: String) {
+        guard players.contains(id), !NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty else { return }
+        queue.async {
+            var err: NSDictionary?
+            NSAppleScript(source: #"tell application id "\#(id)" to playpause"#)?.executeAndReturnError(&err)
+        }
+    }
+
     static func resume(_ ids: [String]) {
         for id in ids where players.contains(id) && !NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty {
             var err: NSDictionary?

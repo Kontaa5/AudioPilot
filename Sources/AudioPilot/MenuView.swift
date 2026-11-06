@@ -8,6 +8,7 @@ struct MenuView: View {
     @Environment(\.openSettings) private var openSettings
     @State private var tab = 0
     @State private var expanded: String?
+    @State private var showAll = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -27,7 +28,7 @@ struct MenuView: View {
         .frame(width: 340)
         .onAppear { mixer.menuVisible = true }
         .animation(.snappy(duration: 0.2), value: mixer.switchGuard)
-        .onDisappear { mixer.menuVisible = false; expanded = nil }
+        .onDisappear { mixer.menuVisible = false; expanded = nil; showAll = false }
     }
 
     // MARK: Kopf / Fuß
@@ -88,12 +89,32 @@ struct MenuView: View {
             Separator()
             SectionTitle("Apps")
             if mixer.apps.isEmpty { Caption("Gerade spielt keine App Ton ab.") }
-            ForEach(mixer.apps) { app in
+            let list = sortedApps
+            ForEach(showAll ? list : Array(list.prefix(3))) { app in
                 AppRow(app: app, expanded: expanded == app.id) {
                     withAnimation(.snappy(duration: 0.22)) { expanded = expanded == app.id ? nil : app.id }
                 }
             }
+            if list.count > 3 {
+                MenuRow(action: { withAnimation(.snappy(duration: 0.22)) { showAll.toggle() } }) {
+                    HStack(spacing: 6) {
+                        Text(showAll ? "Weniger anzeigen" : "Alle anzeigen (\(list.count))").foregroundStyle(.secondary)
+                        Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(showAll ? 180 : 0))
+                    }
+                }
+            }
         }
+    }
+
+    /// Spielende Apps nach Lautstärke (lauteste zuerst), dann der Rest nach Name.
+    private var sortedApps: [AudioApp] {
+        let rank = Dictionary(mixer.ranking.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+        return mixer.apps.enumerated().sorted { a, b in
+            let ka = (a.element.isPlaying ? 0 : 1, rank[a.element.id] ?? .max, a.offset)
+            let kb = (b.element.isPlaying ? 0 : 1, rank[b.element.id] ?? .max, b.offset)
+            return ka < kb
+        }.map(\.element)
     }
 
     private func speakerSymbol(_ v: Float) -> String {
@@ -215,6 +236,8 @@ private struct AppRow: View {
     let expanded: Bool
     let toggle: () -> Void
     @State private var hover = false
+    /// Sofort umschalten statt auf CoreAudio zu warten (Spotify meldet „spielt“ noch Sekunden nach der Pause).
+    @State private var optimistic: Bool?
 
     var body: some View {
         let s = mixer.setting(app)
@@ -236,9 +259,28 @@ private struct AppRow: View {
                 .buttonStyle(.plain)
                 .help(s.muted ? "Ton an" : "Stumm")
 
+                let player = MediaControl.handles(app.id)
                 Text(verbatim: app.name).font(.system(size: 12)).lineLimit(1).truncationMode(.tail)
-                    .frame(width: 96, alignment: .leading)
+                    .frame(width: player ? 70 : 96, alignment: .leading)   // 70 + Knopf 18 + Abstand 8 = 96 → Regler bündig
                     .help(routed ? (mixer.targetDevice(app)?.name ?? app.name) : app.name)
+
+                if player {
+                    let playing = optimistic ?? app.isPlaying
+                    Button {
+                        let want = !playing
+                        optimistic = want
+                        MediaControl.playPause(app.id)
+                        // Spätestens nach 15 s wieder der echte Zustand.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { if optimistic == want { optimistic = nil } }
+                    } label: {
+                        Image(systemName: playing ? "pause.fill" : "play.fill")
+                            .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                            .frame(width: 18, height: 22).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(playing ? "Pausieren" : "Abspielen")
+                    .onChange(of: app.isPlaying) { _, now in if now == optimistic { optimistic = nil } }
+                }
 
                 MeterReader(meters: mixer.meters, appID: app.id) { level in
                     ThinSlider(value: s.volume, range: 0...mixer.settings.maxBoost, mark: 1, level: level) { v in

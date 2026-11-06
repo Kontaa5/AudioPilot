@@ -167,6 +167,19 @@ final class DSPState: @unchecked Sendable {
         return x
     }
 
+    /// Nur messen: Ausgang still lassen (das Original spielt selbst), Spitzenpegel merken. Echtzeit-sicher.
+    static func meter(input: UnsafePointer<AudioBufferList>, output: UnsafeMutablePointer<AudioBufferList>, params: DSPParams) {
+        params.callbacks.wrappingAdd(1, ordering: .relaxed)
+        for b in UnsafeMutableAudioBufferListPointer(output) { if let d = b.mData { memset(d, 0, Int(b.mDataByteSize)) } }
+        let ins = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
+        guard ins.count > 0, let d = ins[ins.count - 1].mData else { return }
+        let n = Int(ins[ins.count - 1].mDataByteSize) / MemoryLayout<Float>.size
+        let src = d.assumingMemoryBound(to: Float.self)
+        var peak: Float = 0
+        for i in 0..<n { let a = abs(src[i]); if a.isFinite && a > peak { peak = a } }
+        params.peakBits.store(min(peak, 4).bitPattern, ordering: .relaxed)
+    }
+
     /// Echtzeit: kein Allokieren, kein Warten auf Locks, kein Logging.
     func process(input: UnsafePointer<AudioBufferList>, output: UnsafeMutablePointer<AudioBufferList>, params: DSPParams) {
         params.callbacks.wrappingAdd(1, ordering: .relaxed)

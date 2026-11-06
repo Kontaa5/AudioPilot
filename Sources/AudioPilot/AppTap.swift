@@ -8,6 +8,7 @@ struct TapError: Error, CustomStringConvertible {
 
 /// Fängt den Ton einer App ab (Apple Process Tap, Original wird stummgeschaltet),
 /// verstärkt/EQt ihn und gibt ihn über ein privates Aggregate-Device auf dem Ausgabegerät aus.
+/// `meterOnly`: nur Pegel messen, Original bleibt hörbar (für „Was spielt gerade?“ bei offenem Menü).
 /// Wird nur auf der Tap-Queue gebaut/gestoppt; `params` ist threadsicher.
 final class AppTap: @unchecked Sendable {
     static let uidPrefix = "AudioPilot-"
@@ -18,7 +19,7 @@ final class AppTap: @unchecked Sendable {
     private var aggID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
 
-    init(processIDs: [AudioObjectID], outputUID: String, gain: Float, setting: AppSetting) throws {
+    init(processIDs: [AudioObjectID], outputUID: String, gain: Float, setting: AppSetting, meterOnly: Bool = false) throws {
         self.processIDs = processIDs
         self.outputUID = outputUID
         params.update(gain: gain, setting: setting)
@@ -27,7 +28,7 @@ final class AppTap: @unchecked Sendable {
         desc.uuid = UUID()
         desc.name = "AudioPilot"
         desc.isPrivate = true
-        desc.muteBehavior = .mutedWhenTapped
+        desc.muteBehavior = meterOnly ? .unmuted : .mutedWhenTapped
         var err = AudioHardwareCreateProcessTap(desc, &tapID)
         guard err == noErr else { throw TapError(step: "Tap erstellen", status: err) }
 
@@ -50,7 +51,8 @@ final class AppTap: @unchecked Sendable {
         let dsp = DSPState(sampleRate: Devices.nominalRate(aggID), params: params)
         let params = self.params
         err = AudioDeviceCreateIOProcIDWithBlock(&procID, aggID, nil) { _, inData, _, outData, _ in
-            dsp.process(input: inData, output: outData, params: params)
+            if meterOnly { DSPState.meter(input: inData, output: outData, params: params) }
+            else { dsp.process(input: inData, output: outData, params: params) }
         }
         guard err == noErr else { stop(); throw TapError(step: "IOProc", status: err) }
         err = AudioDeviceStart(aggID, procID)
